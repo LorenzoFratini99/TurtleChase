@@ -1,6 +1,5 @@
 #include "../include/turtle_controller/turtle_controller.hpp"
 
-
 void TurtleController::ControlCallback(turtlesim::msg::Pose::SharedPtr msg)
 {
   auto twist = geometry_msgs::msg::Twist();

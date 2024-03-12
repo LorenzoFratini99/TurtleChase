@@ -1,10 +1,3 @@
-#include <cstdio>
+#include "../include/turtle_chaser/turtle_chaser.hpp"
 
-int main(int argc, char ** argv)
-{
-  (void) argc;
-  (void) argv;
 
-  printf("hello world turtle_chaser package\n");
-  return 0;
-}
