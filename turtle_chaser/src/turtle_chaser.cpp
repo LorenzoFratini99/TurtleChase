@@ -12,7 +12,11 @@ TurtleChaser::TurtleChaser() : Node("turtle_chaser")
     
     // Publishers
     this->p_pub_twist_2 = this->create_publisher<geometry_msgs::msg::Twist>("/turtle2/cmd_vel", 1);
+
+    // Spawining the second turtle
     this->SpawnTurtle2();
+
+    RCLCPP_INFO(this->get_logger(), "Turtle Chaser setup finished!");
 }
 
 // Callbacks
@@ -61,7 +65,7 @@ void TurtleChaser::ChaseCallback(const turtlesim::msg::Pose::SharedPtr pose1)
 bool TurtleChaser::SpawnTurtle2()
 {
     RCLCPP_INFO(this->get_logger(), "Spawning Turtle2 ...");
-    auto req = std::make_shared<turtlesim::srv::Spawn::Request>();
+    std::shared_ptr<turtlesim::srv::Spawn::Request> req = std::make_shared<turtlesim::srv::Spawn::Request>();
     this->p_client_spawn->async_send_request(req, std::bind(&TurtleChaser::SpawnHandleResponse, this, std::placeholders::_1));
     return true;
 }

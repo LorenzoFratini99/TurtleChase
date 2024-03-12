@@ -7,6 +7,8 @@ TurtleController::TurtleController() : Node("turtle_controller")
   
   // Publishers
   this->command_pub = this->create_publisher<geometry_msgs::msg::Twist>("/turtle1/cmd_vel", 1);
+
+  RCLCPP_INFO(this->get_logger(), "Turtle Controller setup finished!");
 }
 
 void TurtleController::ControlCallback(turtlesim::msg::Pose::SharedPtr msg)
