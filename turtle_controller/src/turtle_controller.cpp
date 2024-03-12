@@ -44,13 +44,13 @@ void TurtleController::ControlCallback(turtlesim::msg::Pose::SharedPtr msg)
   }
   else if(out_of_bounds && this->was_out_of_bounds && std::abs(this->theta_in - theta) > __OUT_OF_BOUNDS_ROT_LIMIT__)
   {
-    twist.linear.x  = 2.0;
+    twist.linear.x  = 1.0;
     twist.angular.z = this->rotation_direction * 0.75;
     // RCLCPP_INFO(this->get_logger(), "3, %d, %d, %d", out_of_bounds, this->was_out_of_bounds, this->rotation_direction); // DEBUG
   }
   else
   {
-    twist.linear.x = 3;
+    twist.linear.x = 2.0;
     this->was_out_of_bounds = false;
     // RCLCPP_INFO(this->get_logger(), "4, %d, %d, %d", out_of_bounds, was_out_of_bounds, rotation_direction); // DEBUG
   }
