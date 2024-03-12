@@ -2,87 +2,68 @@
 
 TurtleChaser::TurtleChaser() : Node("turtle_chaser")
 {
+    // Clients
     this->p_client_spawn = this->create_client<turtlesim::srv::Spawn>("/spawn");
-    this->SpawnTurtle2();
-    
+    this->p_client_reset = this->create_client<turtlesim::srv::TeleportAbsolute>("turtle2/teleport_absolute");
+
+    // Subscribers
     this->p_sub_pose_1 = this->create_subscription<turtlesim::msg::Pose>("turtle1/pose", 1, std::bind(&TurtleChaser::ChaseCallback, this, std::placeholders::_1));
     this->p_sub_pose_2 = this->create_subscription<turtlesim::msg::Pose>("turtle2/pose", 1, std::bind(&TurtleChaser::PoseCallback, this, std::placeholders::_1));
+    
+    // Publishers
     this->p_pub_twist_2 = this->create_publisher<geometry_msgs::msg::Twist>("/turtle2/cmd_vel", 1);
-    this->p_client_reset = this->create_client<turtlesim::srv::TeleportAbsolute>("turtle2/teleport_absolute");
+    this->SpawnTurtle2();
 }
 
+// Callbacks
 void TurtleChaser::PoseCallback(const turtlesim::msg::Pose::SharedPtr pose2)
 {
     this->pose_self[0] = pose2->x;
     this->pose_self[1] = pose2->y;
-    this->pose_self[2] = pose2->theta;
-    this->pose_self[3] = pose2->linear_velocity;
-    this->pose_self[4] = pose2->angular_velocity;
+    
+    if(pose2->theta < 0.0)
+        this->pose_self[2] = 2.0 * M_PI - std::abs(pose2->theta);
+    else
+        this->pose_self[2] = pose2->theta;
 }
-
 
 void TurtleChaser::ChaseCallback(const turtlesim::msg::Pose::SharedPtr pose1)
 {
-    this->target[0] = pose1->x;
-    this->target[1] = pose1->y;
-    this->target[2] = pose1->theta;
-    this->target[3] = pose1->linear_velocity;
-    this->target[4] = pose1->angular_velocity;
+    // Computing Target Pose and Distance to Target
+    this->CalculateTarget(pose1);
+    this->CalculateDistance();
 
-    double distance = this->CalculateDistance();
-
-    if(distance < reset_threshold)
+    // Goal Check
+    if(this->distance < this->reset_threshold)
         this->ResetTurtle2();
 
-    auto control = geometry_msgs::msg::Twist();
+    // Control Action Computation
+    geometry_msgs::msg::Twist control = geometry_msgs::msg::Twist();
 
-    bool out_of_bounds = (this->pose_self[0] > 9 || this->pose_self[0] < 1) || (this->pose_self[1] > 9 || this->pose_self[1] < 1);
+    // Linear Contribution
+    double u_linear = this->kp_linear * this->distance;
+    control.linear.x = (u_linear > 4.0) ? 4.0 : u_linear;
 
-    if(/*this->first_out_of_bounds &&*/ out_of_bounds)
-    {
-        control.linear.x = 1;
-        control.angular.z = 1;
-    }
-    else
-    {
-        this->first_out_of_bounds = false;
-        control.linear.x = 3.0;
+    // Angular Contribution
+    double target_heading = std::atan2(this->target[1] - this->pose_self[1], this->target[0] - this->pose_self[0]); // angle between target and this
+    target_heading = (target_heading < 0.0) ? 2.0 * M_PI - std::abs(target_heading) : target_heading; // same angle, but in 360°
+    double heading_error = target_heading - this->pose_self[2];
+    int sign = (heading_error > 0.0) ? 1 : -1;
 
-        double ang_error = std::atan2(this->target[1] - this->pose_self[1], this->target[0] - this->pose_self[0]) - this->pose_self[2];
-        control.angular.z = 1.0 * ang_error;
-    }
+    heading_error = (std::abs(heading_error) > M_PI) ? (-sign*(2.0 * M_PI - std::abs(heading_error))) : heading_error; // choosing the shortest rotation
+
+    control.angular.z = this->kp_angular * heading_error;
+
     this->p_pub_twist_2->publish(control);
 }
 
+// Utils Functions
 bool TurtleChaser::SpawnTurtle2()
 {
     RCLCPP_INFO(this->get_logger(), "Spawning Turtle2 ...");
     auto req = std::make_shared<turtlesim::srv::Spawn::Request>();
     this->p_client_spawn->async_send_request(req, std::bind(&TurtleChaser::SpawnHandleResponse, this, std::placeholders::_1));
     return true;
-}
-
-void TurtleChaser::SpawnHandleResponse(const rclcpp::Client<turtlesim::srv::Spawn>::SharedFuture future)
-{
-    if(future.valid() && !future.get()->name.empty())
-        RCLCPP_INFO(this->get_logger(), "Turtle %s was spawned correctly", future.get()->name.c_str());
-    else
-    {
-        RCLCPP_ERROR(this->get_logger(), "FAILED TO SPAWN TURTLE 2");
-        rclcpp::shutdown();
-    }
-}
-
-double TurtleChaser::CalculateDistance()
-{
-    double distance = std::numeric_limits<double>::max();
-
-    double dx = this->pose_self[0] - this->target[0];
-    double dy = this->pose_self[1] - this->target[1];
-
-    distance = std::sqrt(std::pow(dx, 2) + std::pow(dy, 2));
-    
-    return distance;
 }
 
 void TurtleChaser::ResetTurtle2()
@@ -95,10 +76,52 @@ void TurtleChaser::ResetTurtle2()
     this->p_client_reset->async_send_request(req, std::bind(&TurtleChaser::ResetHandleResponse, this, std::placeholders::_1));
 }
 
+// Server Response Handlers
+void TurtleChaser::SpawnHandleResponse(const rclcpp::Client<turtlesim::srv::Spawn>::SharedFuture future)
+{
+    if(future.valid() && !future.get()->name.empty())
+        RCLCPP_INFO(this->get_logger(), "Turtle %s was spawned correctly", future.get()->name.c_str());
+    else
+    {
+        RCLCPP_ERROR(this->get_logger(), "FAILED TO SPAWN TURTLE 2");
+        rclcpp::shutdown();
+    }
+}
+
 void TurtleChaser::ResetHandleResponse(const rclcpp::Client<turtlesim::srv::TeleportAbsolute>::SharedFuture future)
 {
     if(future.valid() && !future.get()->structure_needs_at_least_one_member)
         RCLCPP_INFO(this->get_logger(), "Turtle2 reset successfully!");
     else
         RCLCPP_ERROR(this->get_logger(), "FAILED to reset turtle2");
+}
+
+// Control Functions
+void TurtleChaser::CalculateDistance()
+{
+    double dx = this->pose_self[0] - this->target[0];
+    double dy = this->pose_self[1] - this->target[1];
+
+    this->distance = std::sqrt(std::pow(dx, 2) + std::pow(dy, 2));
+}
+
+void TurtleChaser::CalculateTarget(const turtlesim::msg::Pose::SharedPtr pose1)
+{
+    this->target[0] = pose1->x;
+    this->target[1] = pose1->y;
+
+    if(pose1->theta < 0.0)
+        this->target[2] = 2.0 * M_PI - std::abs(pose1->theta);
+    else
+        this->target[2] = pose1->theta;
+
+    this->target[3] = pose1->linear_velocity;
+    this->target[4] = pose1->angular_velocity;
+
+    double dx = 0.1;
+    this->target[0] += pose1->linear_velocity * this->planning_horizon * cos(this->target[2]);
+    this->target[1] += pose1->linear_velocity * this->planning_horizon * sin(this->target[2]);
+
+    this->target[0] += pose1->angular_velocity * this->planning_horizon * dx * cos(this->target[2] + M_PI_2);
+    this->target[1] += pose1->angular_velocity * this->planning_horizon * dx * sin(this->target[2] + M_PI_2);
 }
